@@ -1,0 +1,381 @@
+Implement an authentication system where users can register, log in, and log out securely
+pip install Flask Flask-SQLAlchemy Flask-Bcrypt
+/authentication_system
+    /app.py
+    /templates
+        /login.html
+        /register.html
+    /static
+        /styles.css
+/authentication_system
+    /app.py
+    /templates
+        /login.html
+        /register.html
+    /static
+        /styles.css
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'mysecretkey'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+
+# User Model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    password = db.Column(db.String(150), nullable=False)
+
+# Home Route
+@app.route('/')
+def home():
+    return render_template('login.html')
+
+# Register Route
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        
+        new_user = User(username=username, password=hashed_password)
+        try:
+            db.session.add(new_user)
+            db.session.commit()
+            flash('Account created successfully!', 'success')
+            return redirect(url_for('login'))
+        except:
+            flash('Username already exists!', 'danger')
+            return redirect(url_for('register'))
+    return render_template('register.html')
+
+# Login Route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user and bcrypt.check_password_hash(user.password, password):
+            session['user_id'] = user.id
+            flash('Logged in successfully!', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Login unsuccessful. Check username or password.', 'danger')
+    return render_template('login.html')
+
+# Dashboard Route (Only accessible if logged in)
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        flash('Please log in first', 'danger')
+        return redirect(url_for('login'))
+    return f'Welcome to your dashboard! User ID: {session["user_id"]}'
+
+# Logout Route
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    flash('Logged out successfully!', 'success')
+    return redirect(url_for('login'))
+
+if __name__ == "__main__":
+    db.create_all()  # Creates the database tables if they don't exist
+    app.run(debug=True)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+</head>
+<body>
+    <h2>Register</h2>
+    <form method="POST">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required><br>
+        <button type="submit">Register</button>
+    </form>
+    <p>Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+</head>
+<body>
+    <h2>Login</h2>
+    <form method="POST">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required><br>
+        <button type="submit">Login</button>
+    </form>
+    <p>Don't have an account? <a href="{{ url_for('register') }}">Register here</a></p>
+</body>
+</html>
+
+
+
+
+Implement authorization based on roles (e.g., Admin, User, Moderator). Ensure that each role has specific permissions to access certain resources or endpoints.
+
+from flask import Flask, request, jsonify
+from functools import wraps
+
+app = Flask(__name__)
+
+# Simulated user data
+users = {
+    "admin_user": {"role": "Admin"},
+    "moderator_user": {"role": "Moderator"},
+    "regular_user": {"role": "User"},
+}
+
+# Define role-based access control
+role_permissions = {
+    "Admin": ["view_data", "edit_data", "delete_data"],
+    "Moderator": ["view_data", "edit_data"],
+    "User": ["view_data"],
+}
+
+
+def get_user_role(username):
+    """Retrieve the user's role."""
+    return users.get(username, {}).get("role")
+
+
+def authorize(required_permission):
+    """Authorization decorator based on required permissions."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            username = request.headers.get("Username")
+            if not username or username not in users:
+                return jsonify({"error": "Unauthorized"}), 401
+
+            role = get_user_role(username)
+            if not role or required_permission not in role_permissions.get(role, []):
+                return jsonify({"error": "Forbidden"}), 403
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.route('/view-data', methods=['GET'])
+@authorize("view_data")
+def view_data():
+    return jsonify({"message": "Viewing data: Access granted!"})
+
+
+@app.route('/edit-data', methods=['POST'])
+@authorize("edit_data")
+def edit_data():
+    return jsonify({"message": "Editing data: Access granted!"})
+
+
+@app.route('/delete-data', methods=['DELETE'])
+@authorize("delete_data")
+def delete_data():
+    return jsonify({"message": "Deleting data: Access granted!"})
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+Use secure methods such as JWT or OAuth for managing sessions and user authentication.
+from flask import Flask, request, jsonify
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required, get_jwt_identity
+)
+from functools import wraps
+
+app = Flask(__name__)
+
+# Configurations
+app.config["JWT_SECRET_KEY"] = "your-secure-secret-key"  # Change this to a strong secret key
+jwt = JWTManager(app)
+
+# Simulated user database
+users = {
+    "admin_user": {"password": "admin_pass", "role": "Admin"},
+    "moderator_user": {"password": "moderator_pass", "role": "Moderator"},
+    "regular_user": {"password": "user_pass", "role": "User"},
+}
+
+# Role-based permissions
+role_permissions = {
+    "Admin": ["view_data", "edit_data", "delete_data"],
+    "Moderator": ["view_data", "edit_data"],
+    "User": ["view_data"],
+}
+
+# Utility: Role-based authorization decorator
+def authorize(required_permission):
+    """Decorator to enforce role-based access control."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            identity = get_jwt_identity()
+            if not identity:
+                return jsonify({"error": "Unauthorized"}), 401
+
+            username = identity.get("username")
+            role = identity.get("role")
+            if not role or required_permission not in role_permissions.get(role, []):
+                return jsonify({"error": "Forbidden"}), 403
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+@app.route('/login', methods=['POST'])
+def login():
+    """Authenticate user and return JWT."""
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    user = users.get(username)
+    if not user or user["password"] != password:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    access_token = create_access_token(identity={"username": username, "role": user["role"]})
+    return jsonify({"access_token": access_token})
+
+@app.route('/view-data', methods=['GET'])
+@jwt_required()
+@authorize("view_data")
+def view_data():
+    return jsonify({"message": "Viewing data: Access granted!"})
+
+@app.route('/edit-data', methods=['POST'])
+@jwt_required()
+@authorize("edit_data")
+def edit_data():
+    return jsonify({"message": "Editing data: Access granted!"})
+
+@app.route('/delete-data', methods=['DELETE'])
+@jwt_required()
+@authorize("delete_data")
+def delete_data():
+    return jsonify({"message": "Deleting data: Access granted!"})
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
+Implement Role-Based Access Control (RBAC), where the access to resources is determined based on the user's assigned role.
+from flask import Flask, request, jsonify
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required, get_jwt_identity
+)
+from functools import wraps
+
+app = Flask(__name__)
+
+# Configuration
+app.config["JWT_SECRET_KEY"] = "secure_jwt_secret"  # Use a secure secret key
+jwt = JWTManager(app)
+
+# Simulated user database
+users = {
+    "alice": {"password": "password123", "role": "Admin"},
+    "bob": {"password": "password123", "role": "User"},
+    "carol": {"password": "password123", "role": "Moderator"},
+}
+
+# Role permissions
+role_permissions = {
+    "Admin": ["create", "read", "update", "delete"],
+    "Moderator": ["read", "update"],
+    "User": ["read"],
+}
+
+# Utility function to check permissions
+def authorize(required_permission):
+    """Authorization decorator to enforce RBAC."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_user = get_jwt_identity()
+            if not current_user:
+                return jsonify({"error": "Unauthorized"}), 401
+
+            role = current_user.get("role")
+            if role not in role_permissions:
+                return jsonify({"error": "Forbidden"}), 403
+
+            if required_permission not in role_permissions[role]:
+                return jsonify({"error": "Access denied"}), 403
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# Authentication endpoint
+@app.route("/login", methods=["POST"])
+def login():
+    """Authenticate user and return a JWT token."""
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+
+    user = users.get(username)
+    if not user or user["password"] != password:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    access_token = create_access_token(identity={"username": username, "role": user["role"]})
+    return jsonify({"access_token": access_token})
+
+
+# RBAC-protected endpoints
+@app.route("/create", methods=["POST"])
+@jwt_required()
+@authorize("create")
+def create_resource():
+    return jsonify({"message": "Resource created successfully."})
+
+
+@app.route("/read", methods=["GET"])
+@jwt_required()
+@authorize("read")
+def read_resource():
+    return jsonify({"message": "Resource read successfully."})
+
+
+@app.route("/update", methods=["PUT"])
+@jwt_required()
+@authorize("update")
+def update_resource():
+    return jsonify({"message": "Resource updated successfully."})
+
+
+@app.route("/delete", methods=["DELETE"])
+@jwt_required()
+@authorize("delete")
+def delete_resource():
+    return jsonify({"message": "Resource deleted successfully."})
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
